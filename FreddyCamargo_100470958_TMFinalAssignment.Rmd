@@ -1,0 +1,402 @@
+---
+title: "Fantasy literature differences, a text mining analysis"
+author: "Freddy Andrés Camargo"
+date: "2023-19-03"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, warning = FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Motivation
+
+The objective of this project is to analyze the differences of language and style in fantasy literature available in Project Gutenberg using text mining techniques. Literature provides a valuable source of information about the broader societal changes evolution.
+
+Fantasy literature has captivated readers for centuries, taking them on journeys to magical realms, enchanting kingdoms, and supernatural worlds. With the spread of online bookstores, e-books, and audiobooks, it has never been easier for readers to immerse themselves in this genre. With this increase in popularity comes the need to understand and analyze the themes, characters, and language used in these books. This is where text mining comes in the process of using computational techniques to extract valuable information from large amounts of text.
+
+The objective of this project is to explore text mining techniques to analyze 3 fantasy books. Specifically, we will focus on extracting information such as the most frequent words and phrases, character analysis, story context, and themes present in these books. We will also explore how these books differ from one another, providing valuable insights to understand this genre of literature.
+
+Overall, this project aims to provide a deeper understanding of fantasy literature, hoping to shed light on the inner workings of these stories, and provide insights into what makes them so compelling to readers.
+
+The analyzed books are the following. In brackets we include the gutenberg ID:
+
+- The Divine Comedy by Dante Alighieri (completed in 1320) [8800]
+- Gulliver's Travels by Jonathan Swift (1726) [829]
+- Alice's Adventures in Wonderland by Lewis Carroll (1865) [28885]
+
+
+## Data collection
+
+The text of each book is collected from Project Gutenberg. The books were selected based on popularity and availability, with a focus on texts from different historical periods.
+
+
+```{r}
+library(dplyr)
+library(tidytext)
+library(stringr)
+library(gutenbergr)
+library(ggplot2)
+library(tidyr)
+library(scales)
+library(textdata)
+library(forcats)
+library(igraph)
+library(tm)
+library(quanteda)
+library(quanteda.textplots)
+library(RColorBrewer)
+
+fantasy <- gutenberg_download(c(8800, 829, 28885), meta_fields = 'author')
+
+```
+
+
+## Creating tidy data
+
+To begin our text mining analysis, we first need to **preprocess the data** to create columns for chapter and line numbers, and to remove irrelevant information, like stop words, punctuation, and other characters. 
+
+We also **tokenize the text**. Tokenization is the process of breaking down a piece of text into individual units. Once we have separated the text into tokens, we can then count the frequency of each token. 
+
+```{r}
+#Create columns for chapter and line. Tokenize books.
+tidy_fantasy = fantasy %>%
+  mutate(author = str_replace(author, ", | ", "_")) %>% 
+  group_by(gutenberg_id) %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, 
+                                     regex("^chapter|^CANTO [\\divxlc]" ,
+                                          ignore_case = TRUE)))
+         ) %>%
+  ungroup() %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>% 
+  mutate(word = str_extract(word, "[a-z']+")) 
+
+tidy_fantasy
+
+```
+
+## Word frequency
+
+This process involves counting the number of times each token appears in the text, allowing us to identify the most commonly used words. 
+
+```{r}
+
+# Count words 
+fantasy_counted = tidy_fantasy %>% 
+  group_by(author) %>% 
+  count(word)
+
+fantasy_counted
+
+# Compute frequency
+fantasy_frequency = fantasy_counted %>% 
+  mutate(proportion = n / sum(n)) %>% 
+  select(-n) %>% 
+  pivot_wider(names_from = author, values_from = proportion) %>% 
+  #arrange(desc(Carroll_Lewis)) 
+  #arrange(desc(Dante_Alighieri)) 
+  arrange(desc(Swift_Jonathan)) 
+
+fantasy_frequency
+```
+
+The analysis of the information shown in the table above enables us to gain insights from each book.
+
+1. Alice's Adventures in Wonderland: this book usually mentions some characters: Alice, Queen, white rabbit (2 words seperately), cat, and mouse. Other highly used groups of words are related to size, time, and places: feet, size, minutes, court, house, door, garden, pool, and sea. We infer that this fantasy story animate non human characters. It also involves a structure when the most mentioned person (Alice) goes through different scenarios across time. In addition, some of the most frequent words explain one of the main topics related to Alice's constantly changing size and shape.
+
+2. The Divine Comedy: This book uses many abstract words. The most frequent words don't include characters, which would mean that is written in the first-person and that other characters normally change. However, the word "master" is recurrent, meaning the importance of this figure in the story. We observe many metaphysical and allegorical words. This is the main theme throughout the book: spirit, god, earth, sun, soul, light, world, nature, eternal, life, grace, death, mortal, holy, circle, life, and flame.
+
+It is interesting that there are many expressions related to physical senses or perception instruments (eyes, hear, voice, and view). It could mean that the characters are exposed to scenes that include sensory stimuli. Think of screams from hell and angels singing.
+
+3. Gulliver's Travels: in this story, the author frequently marks some places, with words like country, island, and England. They refer to 3 islands that compose the narrative. Moreover, there are words that refer to communities called Houyhnhnms (horses are also mentioned) and Yahoos that Gulliver found in his travels. This book is famous by their original names.
+
+This book also contains words about some authority figures that are related with the habitants and rulers of the islands:  majesty, king, kingdom, emperor, persons, and queen.
+
+
+```{r}
+f_reference = fantasy_frequency %>% pivot_longer(cols=!c(word,Swift_Jonathan),names_to = "author", values_to = "proportion")
+
+ggplot(f_reference, aes(x = proportion, y = Swift_Jonathan, 
+                      color = abs(Swift_Jonathan - proportion))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 0.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 0.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), 
+                       low = "darkslategray4", high = "gray75") +
+  facet_wrap(~author, ncol = 2) +
+  theme(legend.position="none") +
+  labs(y = "Swift_Jonathan", x = NULL)
+
+```
+
+This visualization compares the words used by each author. We selected Jonathan Swift as a reference because he combined the narratives of the other authors. We observe that the style of each fantasy story is really different; there are no meaningful words that they have in common. 
+
+We observe the results of the Pearson correlation, and we notice that there is a weak correlation in both cases.
+
+```{r}
+cor.test(data = f_reference[f_reference$author == "Carroll_Lewis",],
+         ~ proportion + Swift_Jonathan)
+
+cor.test(data = f_reference[f_reference$author == "Dante_Alighieri",],
+         ~ proportion + Swift_Jonathan)
+```
+
+## Sentyment Analysis
+
+Sentiment analysis is a technique that automatically classifies the sentiment of a given text as positive, negative, or neutral, or related categories for this purpose. This method extracts subjective information from text data, such as opinions, emotions, and attitudes towards a particular topic.
+
+### Sentiment distribution
+
+Let's view how the distribution of sentiments changes throughout each book. This distribution provides valuable insights into the overall sentiment of the texts. To create the distribution, we use a scoring system that assigns a numerical value to each sentiment category (positive, negative, or neutral).
+
+```{r}
+fantasy_sentiment = tidy_fantasy %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(author, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+ggplot(fantasy_sentiment, aes(index, sentiment, fill = author)) +
+  geom_col(show.legend = TRUE) +
+  facet_wrap(~author, ncol = 1, scales = "free_x")+
+  labs(title="Sentiment score by book", y="Sentiment Score", x="Index") + 
+  scale_fill_manual(values = c("#df539b", "#b249ae", "#5d3195")) + 
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold"),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white")
+  )
+
+ggsave("sentiment_score.png", plot = chart, width = 6, height = 4, dpi = 300)
+```
+
+We identify trends and patterns in sentiments that reflect the content of each book. 
+
+* In the Divine Comedy, we notice a strong trend from negative sentiments to positive sentiments. This quite matches the chronicle that starts at hell, goes through purgatory, and then arrives to the heaven. The language expresses the suffering, pain, and desolation of hell, and the tranquility, fullness, and blessedness of heaven. The sentiment distribution captures this metaphysical travel.
+
+* In Alice in Wonderland, in contrast, the whole text is classified as negative. It would represent the critical expressions, events, or emotions contained in the text or that the sentiment lexicon is biased. I'll check it later. Regardless, throughout the book, Alice travels through a surreal world full of strange and unfamiliar places, such as the Mad Hatter's tea party, the Queen of Hearts' castle, and the Cheshire Cat's forest. These places can be confusing, disorienting, and even frightening, which can evoke negative emotions. Additionally, the characters in the book often display negative emotions, such as anger, frustration, and fear. The Queen of Hearts, in particular, is known for her temper and her penchant for ordering beheadings, which can create a negative and tense atmosphere.
+
+* Gulliver's Adventures appears like a combination of previous books. It combines positive and negative sections, depending on the analyzed section. While in some parts, there are many humorous and absurd situations that can evoke a sense of joy and lightheartedness, other sections involve political intrigue and betrayal, which can create a sense of tension and negativity. This is the kind of book with high complexity and a variety of emotions.
+
+### Negative words in Carroll's book
+
+The sentiment distribution of Carroll's book captures our attention, then we want to check the most common negative words in this text. First, we found that "mock" had the highest frequency; however, it would be part of the name of "the mock turtle", and it can bias the sentiment analysis. We filtered this word and applied the sentiment distribution again without any important change. Second, we found that there are many offensive expressions and feelings that explain the negativeness of this book. We should take into account that the book incorporates many characters and sections that are related to violent actions, mistreatment, or cruelty, which contributes to these kinds of sentiments. Some of these famous characters are the Mock Turtle, the Duchess, the Caterpillar, and the Queen of Hearts.
+
+```{r}
+bing_negative <- get_sentiments("bing") %>% 
+  filter(sentiment == "negative")
+
+carroll_negative_words = tidy_fantasy %>%
+    filter(author == "Carroll_Lewis" &  word != "mock") %>%
+    inner_join(bing_negative) %>%
+    count(word, sort = TRUE) %>% 
+    filter(n>5)
+
+ggplot(carroll_negative_words, aes(x=n, y=reorder(word, (n) )))+
+  geom_col() +
+  ylab(label = "")
+```
+
+Lastly, we examine if the sentiment analysis of Allice in Wonderland is a result of the bias of the Bing lexicon. Comparing the output for the Afinn, Bing, and Nrc lexicons, we identify that Bing would have a bias, because its chart has the biggest negative proportion. However, Afinn shows that the book has important sections containing negative terminology. We have manually checked the text, and this is a dark side story.
+
+```{r}
+afinn = tidy_fantasy %>%
+    filter(author == "Carroll_Lewis") %>%
+    inner_join(get_sentiments("afinn")) %>% 
+    group_by(index = linenumber %/% 80) %>% 
+    summarise(sentiment = sum(value)) %>% 
+    mutate(method = "AFINN")
+  
+bing_and_nrc <- bind_rows(
+  tidy_fantasy %>% 
+    filter(author == "Carroll_Lewis") %>%
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  
+  tidy_fantasy %>% 
+    filter(author == "Carroll_Lewis") %>%
+    inner_join(get_sentiments("nrc") %>% 
+       filter(sentiment %in% c("positive",  "negative"))
+    ) %>%
+  mutate(method = "NRC")) %>%
+  
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+  
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+```
+
+
+## Term frequency
+
+Having a general approach to the topics, characters and themes that each book develop throughout their narrative, we want to identify which are the most important elements in each story, compared with the other fantasy books.
+
+We compute tree scores to identify the importance of a word in a set of documents: **term frequency (TF), inverse document frequency (IDF), and the TF-IDF ** that multiplies the previous scores. The TF score measures how frequently a term appears in a document, while the IDF score measures how rare or unique the term is in the entire corpus. Therefore, TF-IDF gives a higher weight to terms that are rare but important in the corpus.
+
+```{r}
+fantasy_tf_idf = fantasy_counted %>%
+  bind_tf_idf(word, author, n)
+
+fantasy_tf_idf %>%
+  arrange(desc(tf_idf))
+```
+
+* We realize that in Lewis Carroll's book, the character names make his literary work unique among the analyzed books. We discover that the highest TF-IDF of this author correspond to Alice, the Turtle, the Duchess, the Caterpillar, the Gryphon, and more.
+
+* In terms of the most distinctive words of Jonathan Swift, the result is similar to the previous author. Gulliver's Travels is characterized by the originality of the characters or creatures names (Glumdalclitch, Houyhnhnms, Yahoo). Fictional names play a key role in Swift's style because he uses the names to critique various aspects of English society and politics at the time, so they are often symbolic or satirical.
+
+* On the other hand, when we analyze the Divine Comedy, we discover that the author focused on the spiritual side of the literary work. In this case, we don't find distinctive characters names (Beatrice is an exception). In contrast, the distinctiveness of this book is given by its religiosity, developing topics like human nature, morality, and spirituality. The more important words identified are soul, eternal, heaven, and spirit.
+
+As a summary of this section, we highlight that fantasy books offer authors a unique opportunity to exercise their creativity and imagination, as they are not bound by the constraints of reality or historical accuracy. In a fantasy book, an author has the freedom to create their own worlds, characters, creatures, and magical systems, allowing them to explore new ideas and concepts that may not be possible in other genres.
+
+```{r}
+
+fantasy_tf_idf %>%
+  group_by(author) %>%
+  #choose maximum number of words
+  slice_max(tf_idf, n = 25) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = author)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~author, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+
+
+```
+
+## N-grams
+
+N-grams is a technique for grouping sequences of words. It can help capture the context and dependencies of words within a text, which can be useful in predicting the probability of a sequence of words or identifying important phrases in a text. We created bigrams (pairs of adjacent words).
+
+```{r}
+fantasy_bigram = fantasy %>%
+  mutate(author = str_replace(author, ", | ", "_")) %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+  filter(!is.na(bigram)) 
+
+ftasy_big_separated <- fantasy_bigram %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+ftasy_big_filtered <- ftasy_big_separated  %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) 
+
+ftasy_big_counts <- ftasy_big_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+ftasy_bigrams_united <- ftasy_big_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+ftasy_bigrams_united
+
+```
+
+
+### Tf-Idf analysis of bigrams
+
+Until now, we have created bigrams taking advantage of the unnest_token() function, filtered the stop words, and created a dataframe that displays the whole information. Furthermore, with this information, we can analyze bigrams with tf-idf. Bigrams provide more context than individual words, and analyzing them with tf-idf can help identify the most important and meaningful bigrams in a text corpus.
+
+```{r}
+ftasy_bigram_tf_idf <- ftasy_bigrams_united %>%
+  count(author, bigram) %>%
+  bind_tf_idf(bigram, author, n) %>%
+  arrange(desc(tf_idf))
+
+ftasy_bigram_tf_idf
+
+ftasy_bigram_tf_idf %>%
+  group_by(author) %>%
+  slice_max(tf_idf, n = 15) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(bigram, tf_idf), fill = author)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~author, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+
+```
+
+1. Bigrams in Carroll Lewis' book: We notice that the most common bigram shows two types of words: the book's characters and things Alice mentions. In this final group, bigrams are the name of Alice preceded by negative adjectives or Alice's actions. This may be because negative adjectives are often used to describe Alice's experiences and emotions in the story.
+
+2. Bigrams in Dante Alighieri's book: Dante Alighieri mentions eyes frequently, probably because they are a symbol of perception and understanding. In this literary work, the eyes are representative, as they mean the ability to see and comprehend the truth, both in a literal and metaphorical sense.
+
+3. Bigrams in Jonathan Swift's book: In contrast, the most important bigrams of Swift's book are those related to travel and measurements of size. This result informs us that throughout the book, Gulliver encounters various societies and peoples that are either much larger or much smaller than him. On the other hand, bigrams related to travel reinforce the idea that the story is a travelogue, and that the encounters Gulliver has are a result of his travels to various parts of the world.
+
+### Bigrams Visualization
+
+Bigram network visualization is a way to visually represent the co-occurrence of pairs of words (or other items) in a text corpus. In a bigram network, nodes represent individual words, and edges connect pairs of words that appear together in the same sentence or other unit of analysis.
+
+```{r}
+library(ggraph)
+set.seed(2020)
+a <- grid::arrow(type = "closed", length = unit(.10, "inches"))
+
+
+ftasy_big_counts %>%
+  filter(n>7) %>%
+  graph_from_data_frame() %>% 
+  ggraph(layout = "fr") +
+    geom_edge_link(aes(edge_alpha = n), show.legend = FALSE, arrow = a) +
+    geom_node_point(color = "green", size = 3) +
+    geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+    theme_void()
+
+
+```
+
+## DTM & DFM analysis
+
+### DTM
+
+DTM stands for "Document-Term Matrix," which is a data structure in text analysis. A DTM is a matrix that represents the frequency of words that appear in a set of documents. DTMs can be used for many applications. Here, we want to identify patterns of co-occurring terms. We converted the books from tidy format to DTM. We notice in the summary of the matrix that we have more than 15 thousand of unique terms and a sparsity of 56%. We infer that the 3 documents analyzed share a great proportion of words, and their vocabulary is not rare or unique.
+
+```{r}
+fantasy_dtm = fantasy_counted %>% 
+  cast_dtm(author, word, n)
+
+fantasy_dtm
+```
+
+### DFM
+
+On the other hand, we can create a Document Feature Matrix (DFM) to perform other kinds of analysis. First, we can analyze the whole corpus and extract the top features of the 3 documents. Also, we can apply a stem transformation and create a cloud of words to see what are the main words used in fantasy literature are. In technical terms, stemming transformations is the process of reducing words to their most basic form, that can be used for analysis.
+
+```{r}
+fantasy_counted = fantasy_counted %>% drop_na()
+fantasy_dfm = fantasy_counted %>%  cast_dfm(author, word, n)
+
+topfeatures(fantasy_dfm, 20)
+
+dfm_stemmed <- dfm_wordstem(fantasy_dfm, language = "english")
+
+set.seed(100)
+
+textplot_wordcloud(dfm_stemmed, min_count = 15, random_order = FALSE,
+                   rotation = .25, 
+                   colors = RColorBrewer::brewer.pal(8,"Dark2"))
+```
+
+## Conclusions
+
+We can use the world cloud to draw some conclusions about our analysis. The Divine Comedy by Dante Alighieri, Gulliver's Travels by Jonathan Swift, and Alice's Adventures in Wonderland by Lewis Carroll are all works of literature that share certain similarities despite being written in different time periods and contexts. These similarities can be observed in the following ways:
+
+* They explore the human condition by creating narratives that involve "time" and journeys: each book explores the human condition in different ways. The Divine Comedy explores the _nature_ of sin and redemption, with Dante using his journey through the afterlife to reflect on human nature and morality. Gulliver's Travels explores the complexity of human nature and society, with Swift using the fantastical scenarios to comment on the flaws and weaknesses of human behavior. Alice's Adventures in Wonderland explores the nature of identity and perception, with Carroll using the strange and surreal world of Wonderland to comment on the human experience.
+
+* The books use imagery and symbolism: Each book uses vivid imagery and symbolism to convey deeper meaning and themes. The Divine Comedy uses rich and complex symbolism, metaphors, and holy mysteries, to convey Dante's allegory. Gulliver's Travels uses imagery to create fantastical worlds that represent human behavior. Alice's Adventures in Wonderland uses _allegories_ to create a dreamlike atmosphere, with the characters and situations representing challenges of personal evolution.
+
+The books are pretty original, and in appearance, they tell different stories. However, we realize that fantasy literature has been an instrument to represent the desires, fears, and processes that human beings experience. In addition, we can see the evolution of social issues reflected in the literature. While in the middle ages, religion played a predominant role in society, in the XVII and XIX centuries, personal development influenced writers, and it was an important topic to show new anthropocentric theories.
